@@ -63,7 +63,9 @@ options:
     allow_agent_forwarding: false
     allow_remote_port_forwarding: false
     allow_tcp_forwarding: false
-  zsh: true
+  shell: fish
+  session_backend: zellij
+  zsh: false
   share_sessions: false
   packages: []
   init_commands: []
@@ -79,7 +81,9 @@ schema:
     allow_agent_forwarding: bool
     allow_remote_port_forwarding: bool
     allow_tcp_forwarding: bool
-  zsh: bool
+  shell: list(fish|zsh|bash)
+  session_backend: list(zellij|tmux)
+  zsh: bool?
   share_sessions: bool
   packages:
     - str
