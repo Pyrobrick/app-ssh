@@ -42,6 +42,7 @@ RUN \
         colordiff=1.0.22-r0 \
         docker-bash-completion=29.5.3-r0 \
         docker-zsh-completion=29.5.3-r0 \
+        fish \
         gcompat=1.1.0-r4 \
         git=2.54.0-r0 \
         htop=3.5.1-r1 \
@@ -66,7 +67,7 @@ RUN \
         nmap-ncat=7.99-r0 \
         openssh=10.3_p1-r0 \
         openssl=3.5.7-r0 \
-        procps-ng=4.0.6-r0 \
+        procps-ng=4.0.6-r1 \
         pwgen=2.08-r3 \
         pulseaudio-utils=17.0-r7 \
         py3-pip=26.1.2-r0 \
@@ -80,6 +81,7 @@ RUN \
         tmux=3.6b-r0 \
         ttyd=1.7.7-r0 \
         wget=1.25.0-r3 \
+        zellij \
         zip=3.0-r13 \
         zsh-autosuggestions=0.7.1-r0 \
         zsh-syntax-highlighting=0.8.0-r1 \
@@ -93,8 +95,10 @@ RUN \
     \
     && chmod a+x /usr/bin/ha \
     && ha completion bash > /usr/share/bash-completion/completions/ha \
+    && mkdir -p /usr/share/fish/vendor_completions.d \
+    && ha completion fish > /usr/share/fish/vendor_completions.d/ha.fish \
     \
-    && sed -i -e "s#bin/sh#bin/zsh#" /etc/passwd \
+    && sed -i -e "s#/bin/sh#/usr/bin/fish#" /etc/passwd \
     \
     && cp /usr/bin/docker /usr/local/bin/.undocked \
     \
