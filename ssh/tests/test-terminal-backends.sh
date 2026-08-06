@@ -91,7 +91,21 @@ EOF
 
 cat > "${tmp_dir}/bin/sudo" <<'EOF'
 #!/bin/sh
-printf '%s\n' "$*"
+set -eu
+
+case "${1:-}" in
+    -H)
+        shift
+        exec "$@"
+        ;;
+    -i)
+        printf '%s\n' "$*"
+        ;;
+    *)
+        echo "unexpected sudo arguments: $*" >&2
+        exit 64
+        ;;
+esac
 EOF
 
 chmod +x "${tmp_dir}/bin/"*
@@ -119,10 +133,28 @@ output=$(PATH="${tmp_dir}/bin:${PATH}" \
     TERMINAL_CONFIG_PATH="${tmp_dir}/terminal.conf" "${terminal_session}")
 assert_eq '-u new -A -s homeassistant /custom/terminal-shell' "${output}"
 
-output=$(PATH="${tmp_dir}/bin:${PATH}" "${ssh_login}" -c 'printf ok')
-assert_eq '-H /bin/bash -lc printf ok' "${output}"
+output=$(PATH="${tmp_dir}/bin:${PATH}" "${ssh_login}" -c \
+    'printf "%s" "quoted command value"')
+assert_eq 'quoted command value' "${output}"
+
+set +e
+PATH="${tmp_dir}/bin:${PATH}" "${ssh_login}" -c 'exit 23'
+command_status=$?
+set -e
+assert_eq 23 "${command_status}"
+
 output=$(PATH="${tmp_dir}/bin:${PATH}" "${ssh_login}")
 assert_eq '-i' "${output}"
+
+cat > "${tmp_dir}/passwd" <<'EOF'
+root:x:0:0:root:/root:/bin/ash
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+EOF
+terminal::set_root_account_shell "${tmp_dir}/passwd"
+assert_eq 'root:x:0:0:root:/root:/bin/bash' \
+    "$(sed -n '1p' "${tmp_dir}/passwd")"
+assert_eq 'daemon:x:2:2:daemon:/sbin:/sbin/nologin' \
+    "$(sed -n '2p' "${tmp_dir}/passwd")"
 
 # A non-interactive login shell must not be redirected into a multiplexer.
 output=$(bash --noprofile --norc -c "source '${bash_profile}'; printf unaffected")

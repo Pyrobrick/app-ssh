@@ -26,15 +26,6 @@ declare shell_path
 # shellcheck disable=SC1091
 source /usr/local/lib/terminal-config.sh
 
-set_root_account_shell() {
-    # Keep the account shell POSIX-compatible. OpenSSH uses this shell with -c
-    # for remote commands; interactive shell selection happens in .bash_profile.
-    sed -i -r -e \
-        's|^(root:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:).*|\1/bin/bash|' \
-        /etc/passwd* \
-        || bashio::exit.nok 'Failed setting the root account shell'
-}
-
 write_terminal_config() {
     cat > "${TERMINAL_CONFIG_FILE}" <<EOF
 TERMINAL_SHELL_NAME=${login_shell}
@@ -107,7 +98,8 @@ case "${login_shell}" in
         ;;
 esac
 
-set_root_account_shell
+# Keep root on Bash for OpenSSH command-mode compatibility.
+terminal::set_root_account_shell /etc/passwd*
 write_terminal_config
 
 # Make new tmux panes use the same login-shell wrapper as the initial pane.

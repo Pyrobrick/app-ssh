@@ -46,3 +46,19 @@ terminal::session_backend() {
             ;;
     esac
 }
+
+terminal::set_root_account_shell() {
+    local passwd_file
+
+    if (( $# == 0 )); then
+        bashio::exit.nok 'No passwd files supplied'
+        return 1
+    fi
+
+    for passwd_file in "$@"; do
+        sed -i -r -e \
+            's|^(root:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:).*|\1/bin/bash|' \
+            "${passwd_file}" \
+            || bashio::exit.nok 'Failed setting the root account shell'
+    done
+}

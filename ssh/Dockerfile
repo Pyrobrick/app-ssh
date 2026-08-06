@@ -42,7 +42,7 @@ RUN \
         colordiff=1.0.22-r0 \
         docker-bash-completion=29.5.3-r0 \
         docker-zsh-completion=29.5.3-r0 \
-        fish=3.7.1-r0 \
+        fish=4.6.0-r1 \
         gcompat=1.1.0-r4 \
         git=2.54.0-r0 \
         htop=3.5.1-r1 \
@@ -81,7 +81,7 @@ RUN \
         tmux=3.6b-r0 \
         ttyd=1.7.7-r0 \
         wget=1.25.0-r3 \
-        zellij=0.40.0-r0 \
+        zellij=0.42.2-r0 \
         zip=3.0-r13 \
         zsh-autosuggestions=0.7.1-r0 \
         zsh-syntax-highlighting=0.8.0-r1 \

@@ -283,18 +283,22 @@ client uses the clipboard behavior of its own terminal instead.
 
 ## Running the `ha` command or Supervisor API non-interactively
 
-Non-interactive SSH commands run through root's Bash login environment, even
-when Fish or Zsh is selected for interactive use. This keeps shell scripting
-compatible and makes the `SUPERVISOR_TOKEN` available without entering the
-shared terminal session:
+Non-interactive SSH commands always run under Bash and never enter the selected
+multiplexer. With the default non-root SSH username, the login wrapper executes
+the command through root's Bash login environment. When logging in directly as
+root, OpenSSH invokes root's Bash account shell and imports the
+`SUPERVISOR_TOKEN` from the permitted SSH environment:
 
 ```shell
 ssh your-instance "ha core info"
 ```
 
 The command's output and exit status are returned directly to the SSH client.
-Interactive logins still use the configured `shell` and, when enabled, the
-configured shared-session backend.
+Interactive SSH and Web Terminal logins still use the configured `shell` and,
+when enabled, the configured shared-session backend.
+
+Mosh bootstraps through non-interactive SSH command mode. It therefore starts
+Bash and does not attach to the configured shared-session backend.
 
 ## Changelog & Releases
 
