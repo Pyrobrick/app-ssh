@@ -7,44 +7,6 @@
 declare ttyd_command
 declare -a options
 declare ingress_port
-declare login_shell
-declare session_backend
-declare shell_path
-
-get_login_shell() {
-    if bashio::config.has_value 'shell'; then
-        bashio::config 'shell'
-    elif bashio::config.true 'zsh'; then
-        echo 'zsh'
-    else
-        echo 'bash'
-    fi
-}
-
-get_shell_path() {
-    case "$1" in
-        fish)
-            echo '/usr/bin/fish'
-            ;;
-        zsh)
-            echo '/bin/zsh'
-            ;;
-        bash)
-            echo '/bin/bash'
-            ;;
-        *)
-            bashio::exit.nok "Unsupported shell: $1"
-            ;;
-    esac
-}
-
-get_session_backend() {
-    if bashio::config.has_value 'session_backend'; then
-        bashio::config 'session_backend'
-    else
-        echo 'zellij'
-    fi
-}
 
 bashio::log.info 'Starting the ttyd daemon...'
 
@@ -65,21 +27,9 @@ options+=(--writable)
 ingress_port=$(bashio::app.ingress_port)
 options+=(-p "${ingress_port}")
 
-login_shell=$(get_login_shell)
-shell_path=$(get_shell_path "${login_shell}")
-session_backend=$(get_session_backend)
-
-case "${session_backend}" in
-    zellij)
-        ttyd_command=(zellij attach --create homeassistant options --default-shell "${shell_path}")
-        ;;
-    tmux)
-        ttyd_command=(tmux -u new -A -s homeassistant "${shell_path}" -l)
-        ;;
-    *)
-        bashio::exit.nok "Unsupported session backend: ${session_backend}"
-        ;;
-esac
+# Web Terminal clients always use the selected backend. share_sessions controls
+# whether interactive SSH clients attach to this same backend session.
+ttyd_command=(/usr/local/bin/terminal-session)
 
 # Change working directory
 cd /root || bashio::exit.nok 'Unable to change working directory'

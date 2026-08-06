@@ -7,114 +7,45 @@
 readonly -a DIRECTORIES=(addon_configs addons backup homeassistant media share ssl)
 readonly BASH_HISTORY_FILE=/root/.bash_history
 readonly BASH_HISTORY_PERSISTENT_FILE=/data/.bash_history
-readonly FISH_CONF_D_PATH=/root/.config/fish/conf.d
-readonly FISH_HOME_ASSISTANT_CONF_D_FILE=/root/.config/fish/conf.d/homeassistant.fish
 readonly FISH_HISTORY_FILE=/root/.local/share/fish/fish_history
 readonly FISH_HISTORY_PERSISTENT_FILE=/data/fish_history
 readonly GIT_CONFIG=/data/.gitconfig
 readonly HOME_ASSISTANT_PROFILE_D_FILE=/etc/profile.d/homeassistant.sh
 readonly SSH_USER_PATH=/data/.ssh
+readonly TERMINAL_CONFIG_FILE=/etc/terminal-session.conf
+readonly TERMINAL_SHELL_COMMAND=/usr/local/bin/terminal-shell
 readonly VSCODE_SERVER_PATH=/root/.vscode-server
 readonly VSCODE_SERVER_PERSISTENT_PATH=/data/.vscode-server
 readonly ZSH_HISTORY_FILE=/root/.zsh_history
 readonly ZSH_HISTORY_PERSISTENT_FILE=/data/.zsh_history
 declare login_shell
 declare session_backend
+declare share_sessions=false
 declare shell_path
 
-get_login_shell() {
-    if bashio::config.has_value 'shell'; then
-        bashio::config 'shell'
-    elif bashio::config.true 'zsh'; then
-        echo 'zsh'
-    else
-        echo 'bash'
-    fi
+# shellcheck disable=SC1091
+source /usr/local/lib/terminal-config.sh
+
+set_root_account_shell() {
+    # Keep the account shell POSIX-compatible. OpenSSH uses this shell with -c
+    # for remote commands; interactive shell selection happens in .bash_profile.
+    sed -i -r -e \
+        's|^(root:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:).*|\1/bin/bash|' \
+        /etc/passwd* \
+        || bashio::exit.nok 'Failed setting the root account shell'
 }
 
-get_shell_path() {
-    case "$1" in
-        fish)
-            echo '/usr/bin/fish'
-            ;;
-        zsh)
-            echo '/bin/zsh'
-            ;;
-        bash)
-            echo '/bin/bash'
-            ;;
-        *)
-            bashio::exit.nok "Unsupported shell: $1"
-            ;;
-    esac
-}
-
-get_session_backend() {
-    if bashio::config.has_value 'session_backend'; then
-        bashio::config 'session_backend'
-    else
-        echo 'zellij'
-    fi
-}
-
-set_root_shell() {
-    sed -i -r -e "s|^(root:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:).*|\1$1|" /etc/passwd* \
-        || bashio::exit.nok 'Failed setting the root login shell'
-}
-
-write_bash_profile() {
-    cat > /root/.bash_profile <<EOF
-if [[ -z "\${TMUX}" ]] && [[ -z "\${ZELLIJ}" ]]; then
-  case "${session_backend}" in
-    zellij)
-      exec zellij attach --create homeassistant options --default-shell "${shell_path}"
-      ;;
-    tmux)
-      exec tmux -u new -A -s homeassistant "${shell_path}" -l
-      ;;
-  esac
-fi
-EOF
-}
-
-write_zsh_profile() {
-    cat > /root/.zprofile <<EOF
-if [[ -z "\${TMUX}" ]] && [[ -z "\${ZELLIJ}" ]] && [[ -o interactive ]]; then
-  case "${session_backend}" in
-    zellij)
-      exec zellij attach --create homeassistant options --default-shell "${shell_path}"
-      ;;
-    tmux)
-      exec tmux -u new -A -s homeassistant "${shell_path}" -l
-      ;;
-  esac
-fi
-EOF
-}
-
-write_fish_config() {
-    mkdir -p "${FISH_CONF_D_PATH}" /root/.local/share/fish \
-        || bashio::exit.nok 'Failed creating Fish configuration directories'
-
-    cat > "${FISH_HOME_ASSISTANT_CONF_D_FILE}" <<EOF
-set -gx SUPERVISOR_TOKEN "${SUPERVISOR_TOKEN}"
+write_terminal_config() {
+    cat > "${TERMINAL_CONFIG_FILE}" <<EOF
+TERMINAL_SHELL_NAME=${login_shell}
+TERMINAL_SHELL_PATH=${shell_path}
+TERMINAL_SESSION_BACKEND=${session_backend}
+TERMINAL_SHARE_SESSIONS=${share_sessions}
+TERMINAL_SHELL_COMMAND=${TERMINAL_SHELL_COMMAND}
 EOF
 
-    if bashio::config.true 'share_sessions'; then
-        cat >> "${FISH_HOME_ASSISTANT_CONF_D_FILE}" <<EOF
-
-if status is-interactive
-    if test -z "\$TMUX"; and test -z "\$ZELLIJ"
-        switch "${session_backend}"
-            case zellij
-                exec zellij attach --create homeassistant options --default-shell "${shell_path}"
-            case tmux
-                exec tmux -u new -A -s homeassistant "${shell_path}" -l
-        end
-    end
-end
-EOF
-    fi
+    chmod 0644 "${TERMINAL_CONFIG_FILE}" \
+        || bashio::exit.nok 'Failed setting terminal configuration permissions'
 }
 
 # Links some common directories to the user's home folder for convenience
@@ -129,9 +60,12 @@ ln -s "/homeassistant" "/config" \
 ln -s "/homeassistant" "${HOME}/config" \
     || bashio::log.warning "Failed linking common directory: ${HOME}/config"
 
-login_shell=$(get_login_shell)
-shell_path=$(get_shell_path "${login_shell}")
-session_backend=$(get_session_backend)
+login_shell=$(terminal::shell_name)
+shell_path=$(terminal::shell_path "${login_shell}")
+session_backend=$(terminal::session_backend)
+if bashio::config.true 'share_sessions'; then
+    share_sessions=true
+fi
 
 # Sets up shell history
 case "${login_shell}" in
@@ -173,13 +107,14 @@ case "${login_shell}" in
         ;;
 esac
 
-# Configure the selected root login shell and tmux default shell.
-set_root_shell "${shell_path}"
-sed -i -r -e "s|^(set-option -g default-shell ).*|\1${shell_path}|" /root/.tmux.conf \
-    || bashio::exit.nok 'Failed configuring tmux default shell'
+set_root_account_shell
+write_terminal_config
 
-# Configure Fish, including the Supervisor token for Fish login sessions.
-write_fish_config
+# Make new tmux panes use the same login-shell wrapper as the initial pane.
+sed -i -r -e \
+    "s|^(set-option -g default-shell ).*|\1${TERMINAL_SHELL_COMMAND}|" \
+    /root/.tmux.conf \
+    || bashio::exit.nok 'Failed configuring the tmux default shell'
 
 echo "export SUPERVISOR_TOKEN=\"${SUPERVISOR_TOKEN}\"" \
     >> "${HOME_ASSISTANT_PROFILE_D_FILE}" \
@@ -213,14 +148,8 @@ if ! bashio::fs.directory_exists "${VSCODE_SERVER_PERSISTENT_PATH}"; then
 fi
 ln -s "${VSCODE_SERVER_PERSISTENT_PATH}" "${VSCODE_SERVER_PATH}"
 
-# Configure SSH & Web Terminal session sharing if requested.
-if bashio::config.true 'share_sessions'; then
-    write_bash_profile
-    write_zsh_profile
-else
+if [[ "${share_sessions}" == 'false' ]]; then
     bashio::log.notice 'Session sharing has been disabled!'
-    rm -f /root/.bash_profile
-    rm -f /root/.zprofile
 fi
 
 # Install user configured/requested packages

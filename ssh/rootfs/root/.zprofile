@@ -1,3 +1,2 @@
-if [[ -z "$TMUX" ]] && [[ -o interactive ]]; then
-  exec tmux -u new -A -s homeassistant zsh -l
-fi
+# Root keeps Bash as its account shell. Interactive Zsh is launched through
+# /usr/local/bin/terminal-shell after the login environment has been prepared.

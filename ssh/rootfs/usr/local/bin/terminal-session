@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+config_path="${TERMINAL_CONFIG_PATH:-/etc/terminal-session.conf}"
+# shellcheck disable=SC1090
+. "${config_path}"
+
+shell_command="${TERMINAL_SHELL_COMMAND:-/usr/local/bin/terminal-shell}"
+
+case "${TERMINAL_SESSION_BACKEND}" in
+    zellij)
+        exec zellij attach --create homeassistant options \
+            --default-shell "${shell_command}" \
+            --mirror-session true \
+            --simplified-ui true
+        ;;
+    tmux)
+        exec tmux -u new -A -s homeassistant "${shell_command}"
+        ;;
+    *)
+        echo "Unsupported session backend: ${TERMINAL_SESSION_BACKEND}" >&2
+        exit 1
+        ;;
+esac

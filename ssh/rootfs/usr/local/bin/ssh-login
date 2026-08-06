@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+# OpenSSH invokes the configured account shell with `-c command` for remote
+# commands. Run those commands through root's POSIX login shell so scripting,
+# rsync, Mosh and similar clients do not inherit the selected interactive shell.
+if [ "${1:-}" = '-c' ]; then
+    shift
+    exec sudo -H /bin/bash -lc "${1:-}"
+fi
+
+exec sudo -i

@@ -65,12 +65,13 @@ well. Additionally, it comes out of the box with the following:
   your favorite tools, which will be available every single time you log in.
 - Execute custom commands on app start so that you can customize the
   shell to your likings.
-- [ZSH][zsh] as its default shell. Easier to use for the beginner, more advanced
-  for the more experienced user. It even comes preloaded with
-  ["Oh My ZSH"][ohmyzsh], with some plugins enabled as well.
+- Selectable interactive shells: Zsh with Oh My Zsh remains the compatible
+  default, while Fish and Bash are available through the `shell` option.
+- Selectable terminal session backends: tmux remains the compatible default,
+  while Zellij is available through the `session_backend` option.
 - Contains a sensible set of tools right out of the box: curl, Wget, RSync, GIT,
   Nmap, Mosquitto client, MariaDB/MySQL client, Awake ("wake on LAN"), Nano,
-  Neovim, tmux, and a bunch commonly used networking tools.
+  Neovim, tmux, Zellij, and a bunch commonly used networking tools.
 
 ## Support
 

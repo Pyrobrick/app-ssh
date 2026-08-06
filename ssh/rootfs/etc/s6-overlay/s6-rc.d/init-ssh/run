@@ -8,6 +8,7 @@ readonly SSH_AUTHORIZED_KEYS_PATH=/etc/ssh/authorized_keys
 readonly SSH_CONFIG_PATH=/etc/ssh/sshd_config
 readonly SSH_HOST_ED25519_KEY=/data/ssh_host_ed25519_key
 readonly SSH_HOST_RSA_KEY=/data/ssh_host_rsa_key
+readonly SSH_LOGIN_SHELL=/usr/local/bin/ssh-login
 declare password
 declare port
 declare username
@@ -98,18 +99,14 @@ username=$(bashio::string.lower "${username}")
 # Create user account if the user isn't root
 if [[ "${username}" != "root" ]]; then
 
-    # Create an user account. Keep the SSH login user on /bin/sh so it can
-    # consistently hand off to the configured root login shell via sudo -i.
-    adduser -D "${username}" -s "/bin/sh" \
+    # The wrapper elevates both interactive sessions and remote commands while
+    # keeping non-interactive commands on root's POSIX-compatible Bash shell.
+    adduser -D "${username}" -s "${SSH_LOGIN_SHELL}" \
         || bashio::exit.nok 'Failed creating the user account'
 
     # Add new user to the wheel group
     adduser "${username}" wheel \
         || bashio::exit.nok 'Failed adding user to wheel group'
-
-    # Ensure new user switches to root after login
-    echo 'exec sudo -i' > "/home/${username}/.profile" \
-        || bashio::exit.nok 'Failed configuring user profile'
 fi
 
 # We need to set a password for the user account
@@ -130,7 +127,7 @@ if bashio::config.has_value 'ssh.authorized_keys'; then
 fi
 
 # Port
-sed -i "s/Port\ .*/Port\ ${port}/" "${SSH_CONFIG_PATH}" \
+sed -i "s/Port\\ .*/Port\\ ${port}/" "${SSH_CONFIG_PATH}" \
     || bashio::exit.nok 'Failed configuring port'
 
 # SFTP access
@@ -141,16 +138,16 @@ fi
 
 # Allow specified user to log in
 if [[ "${username}" != "root" ]]; then
-    sed -i "s/AllowUsers\ .*/AllowUsers\ ${username}/" "${SSH_CONFIG_PATH}" \
+    sed -i "s/AllowUsers\\ .*/AllowUsers\\ ${username}/" "${SSH_CONFIG_PATH}" \
         || bashio::exit.nok 'Failed opening SSH for the configured user'
 else
-    sed -i "s/PermitRootLogin\ .*/PermitRootLogin\ yes/" "${SSH_CONFIG_PATH}" \
+    sed -i "s/PermitRootLogin\\ .*/PermitRootLogin\\ yes/" "${SSH_CONFIG_PATH}" \
         || bashio::exit.nok 'Failed opening SSH for the root user'
 fi
 
 # Enable password authentication when password is set
 if bashio::config.has_value 'ssh.password'; then
-    sed -i "s/PasswordAuthentication.*/PasswordAuthentication\ yes/" \
+    sed -i "s/PasswordAuthentication.*/PasswordAuthentication\\ yes/" \
         "${SSH_CONFIG_PATH}" \
           || bashio::exit.nok 'Failed to setup SSH password authentication'
 fi
@@ -167,21 +164,21 @@ fi
 
 # Enable Agent forwarding
 if bashio::config.true 'ssh.allow_agent_forwarding'; then
-    sed -i "s/AllowAgentForwarding.*/AllowAgentForwarding\ yes/" \
+    sed -i "s/AllowAgentForwarding.*/AllowAgentForwarding\\ yes/" \
         "${SSH_CONFIG_PATH}" \
           || bashio::exit.nok 'Failed to setup SSH Agent Forwarding'
 fi
 
 # Allow remote port forwarding
 if bashio::config.true 'ssh.allow_remote_port_forwarding'; then
-    sed -i "s/GatewayPorts.*/GatewayPorts\ yes/" \
+    sed -i "s/GatewayPorts.*/GatewayPorts\\ yes/" \
         "${SSH_CONFIG_PATH}" \
           || bashio::exit.nok 'Failed to setup remote port forwarding'
 fi
 
 # Allow TCP forewarding
 if bashio::config.true 'ssh.allow_tcp_forwarding'; then
-    sed -i "s/AllowTcpForwarding.*/AllowTcpForwarding\ yes/" \
+    sed -i "s/AllowTcpForwarding.*/AllowTcpForwarding\\ yes/" \
         "${SSH_CONFIG_PATH}" \
           || bashio::exit.nok 'Failed to setup SSH TCP Forwarding'
 fi
