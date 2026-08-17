@@ -11,7 +11,7 @@ source "${config_path}"
 : "${SUPERVISOR_IP:?SUPERVISOR_IP is required}"
 
 ingress_entry="${INGRESS_ENTRY%/}"
-zellij_config_file="${ZELLIJ_CONFIG_FILE_OVERRIDE:-${ZELLIJ_CONFIG_FILE:-/etc/zellij/config.kdl}"
+zellij_config_file="${ZELLIJ_CONFIG_FILE_OVERRIDE:-${ZELLIJ_CONFIG_FILE:-/etc/zellij/config.kdl}}"
 zellij_state_dir="${ZELLIJ_STATE_DIR:-/data/zellij}"
 zellij_token_file="${ZELLIJ_TOKEN_FILE:-${zellij_state_dir}/web-token}"
 nginx_config_file="${NGINX_CONFIG_FILE:-/etc/nginx/zellij.conf}"
