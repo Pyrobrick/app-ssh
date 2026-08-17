@@ -67,8 +67,8 @@ well. Additionally, it comes out of the box with the following:
   shell to your likings.
 - Selectable interactive shells: Zsh with Oh My Zsh remains the compatible
   default, while Fish and Bash are available through the `shell` option.
-- Selectable terminal session backends: tmux remains the compatible default,
-  while Zellij is available through the `session_backend` option.
+- Selectable terminal session backends: tmux keeps the ttyd/xterm.js web
+  terminal, while Zellij uses its built-in browser client.
 - Contains a sensible set of tools right out of the box: curl, Wget, RSync, GIT,
   Nmap, Mosquitto client, MariaDB/MySQL client, Awake ("wake on LAN"), Nano,
   Neovim, tmux, Zellij, and a bunch commonly used networking tools.

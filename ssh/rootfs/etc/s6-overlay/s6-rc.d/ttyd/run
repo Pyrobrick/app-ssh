@@ -2,40 +2,55 @@
 # shellcheck shell=bash
 # ==============================================================================
 # Home Assistant Community App: Advanced SSH & Web Terminal
-# Runs the ttyd daemon
+# Runs ttyd for tmux or Zellij's native web client for Zellij sessions
 # ==============================================================================
-declare ttyd_command
 declare -a options
+declare ingress_entry
+declare ingress_ip
 declare ingress_port
+declare supervisor_ip
 
-bashio::log.info 'Starting the ttyd daemon...'
+# shellcheck disable=SC1091
+source /etc/terminal-session.conf
 
-# Set daemon debug level
-if bashio::debug; then
-    options+=(-d7)
-else
-    options+=(-d1)
-fi
+case "${TERMINAL_SESSION_BACKEND}" in
+    zellij)
+        bashio::log.info 'Starting the native Zellij web client...'
 
-# Listen on Supervisor interface only
-options+=(-i hassio)
+        ingress_entry=$(bashio::app.ingress_entry)
+        ingress_ip=$(bashio::app.ip_address)
+        ingress_port=$(bashio::app.ingress_port)
+        supervisor_ip=$(bashio::supervisor.ip_address)
 
-# We want to be able to use the terminal
-options+=(--writable)
+        export INGRESS_ENTRY="${ingress_entry}"
+        export INGRESS_IP="${ingress_ip}"
+        export INGRESS_PORT="${ingress_port}"
+        export SUPERVISOR_IP="${supervisor_ip}"
 
-# Get assigned Ingress port
-ingress_port=$(bashio::app.ingress_port)
-options+=(-p "${ingress_port}")
+        exec /usr/local/bin/zellij-web
+        ;;
+    tmux)
+        bashio::log.info 'Starting the ttyd daemon...'
 
-# Web Terminal clients always use the selected backend. share_sessions controls
-# whether interactive SSH clients attach to this same backend session.
-ttyd_command=(/usr/local/bin/terminal-session)
+        if bashio::debug; then
+            options+=(-d7)
+        else
+            options+=(-d1)
+        fi
 
-# Change working directory
-cd /root || bashio::exit.nok 'Unable to change working directory'
+        options+=(-i hassio)
+        options+=(--writable)
 
-# Set environment so that we know if we're running under ttyd
-export TTYD=1
+        ingress_port=$(bashio::app.ingress_port)
+        options+=(-p "${ingress_port}")
 
-# Run the ttyd daemon
-exec ttyd "${options[@]}" "${ttyd_command[@]}"
+        cd /root || bashio::exit.nok 'Unable to change working directory'
+        export TTYD=1
+
+        exec ttyd "${options[@]}" /usr/local/bin/terminal-session
+        ;;
+    *)
+        bashio::exit.nok \
+            "Unsupported session backend: ${TERMINAL_SESSION_BACKEND}"
+        ;;
+esac

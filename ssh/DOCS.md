@@ -46,8 +46,8 @@ well. Additionally, it comes out of the box with the following:
   shell to your likings.
 - Selectable interactive shells: Zsh with Oh My Zsh remains the compatible
   default, while Fish and Bash are available through the `shell` option.
-- Selectable terminal session backends: tmux remains the compatible default,
-  while Zellij is available through the `session_backend` option.
+- Selectable terminal session backends: tmux remains the compatible default
+  and uses ttyd/xterm.js, while Zellij uses its native browser client.
 - Contains a sensible set of tools right out of the box: curl, Wget, RSync, GIT,
   Nmap, Mosquitto client, MariaDB/MySQL client, Awake ("wake on LAN"), Nano,
   Neovim, tmux, Zellij, and a bunch commonly used networking tools.
@@ -216,9 +216,16 @@ sharing is enabled, SSH. Supported values are `zellij` and `tmux`. If this
 option is omitted, tmux remains the default for compatibility with existing
 installations.
 
-Zellij uses mirrored sessions and its simplified UI in this app so simultaneous
-SSH and Web Terminal clients see the same workspace without requiring special
-terminal fonts.
+With `zellij`, the Home Assistant panel is served by Zellij's built-in web
+server; ttyd and xterm.js are not started. A small ingress adapter restricts the
+server to Home Assistant Supervisor traffic and forwards its HTTP and WebSocket
+connections. With `tmux`, the existing ttyd/xterm.js Web Terminal remains in
+use for Fish, Zsh, and Bash.
+
+Zellij's token authentication stays enabled. On first startup the app creates a
+token named `home-assistant`, prints it once in the app log, and stores the
+token in `/data/zellij/web-token` with root-only permissions. Paste it into
+the Zellij login screen and select the remember option if desired.
 
 #### Option: `zsh`
 
@@ -265,8 +272,8 @@ single time this app starts.
 
 ## Clipboard: copying and pasting
 
-The Web Terminal is based on xterm.js, which follows X11-style clipboard
-conventions that may differ from what you expect:
+With the `tmux` backend, the Web Terminal uses xterm.js and follows X11-style
+clipboard conventions that may differ from what you expect:
 
 - **Copy**: hold `Shift` and select the text with your mouse. The selection is
   copied to your system clipboard right away (a small scissors icon briefly
@@ -274,8 +281,9 @@ conventions that may differ from what you expect:
 - **Paste**: press `Ctrl+Shift+V`, or right-click and choose paste, depending
   on your browser.
 
-This applies to the Web Terminal in the Home Assistant frontend. A regular SSH
-client uses the clipboard behavior of its own terminal instead.
+The `zellij` backend instead uses Zellij's native browser client and its own
+keyboard and mouse handling. A regular SSH client always uses the clipboard
+behavior of its own terminal.
 
 ## Known issues and limitations
 

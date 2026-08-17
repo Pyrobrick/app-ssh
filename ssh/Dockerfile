@@ -16,6 +16,9 @@ COPY requirements.txt /tmp/
 # Setup base
 ARG BUILD_ARCH=amd64
 ARG HA_CLI_VERSION="5.2.0"
+ARG ZELLIJ_VERSION="0.44.3"
+ARG ZELLIJ_SHA256_AMD64="0f7c346788627f506c0a28296517768633cff24fc822a739f8264b640ecad751"
+ARG ZELLIJ_SHA256_AARCH64="15e6534d42644d66973d136c590c49739dcfd6a1a2a0d3d917973f16c81b45fb"
 
 # hadolint ignore=DL3003,DL3042
 RUN \
@@ -65,6 +68,7 @@ RUN \
         net-tools=2.10-r3 \
         nmap=7.99-r0 \
         nmap-ncat=7.99-r0 \
+        nginx=1.30.4-r1 \
         openssh=10.3_p1-r0 \
         openssl=3.5.7-r0 \
         procps-ng=4.0.6-r0 \
@@ -81,7 +85,6 @@ RUN \
         tmux=3.6b-r0 \
         ttyd=1.7.7-r0 \
         wget=1.25.0-r3 \
-        zellij=0.42.2-r0 \
         zip=3.0-r13 \
         zsh-autosuggestions=0.7.1-r0 \
         zsh-syntax-highlighting=0.8.0-r1 \
@@ -97,6 +100,27 @@ RUN \
     && ha completion bash > /usr/share/bash-completion/completions/ha \
     && mkdir -p /usr/share/fish/vendor_completions.d \
     && ha completion fish > /usr/share/fish/vendor_completions.d/ha.fish \
+    \
+    && case "${BUILD_ARCH}" in \
+        amd64) \
+            zellij_target="x86_64-unknown-linux-musl"; \
+            zellij_sha256="${ZELLIJ_SHA256_AMD64}" \
+            ;; \
+        aarch64) \
+            zellij_target="aarch64-unknown-linux-musl"; \
+            zellij_sha256="${ZELLIJ_SHA256_AARCH64}" \
+            ;; \
+        *) \
+            echo "Unsupported architecture for Zellij: ${BUILD_ARCH}" >&2; \
+            exit 1 \
+            ;; \
+        esac \
+    && curl -fsSL -o /tmp/zellij.tar.gz \
+        "https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VERSION}/zellij-${zellij_target}.tar.gz" \
+    && echo "${zellij_sha256}  /tmp/zellij.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/zellij.tar.gz -C /usr/local/bin zellij \
+    && chmod 0755 /usr/local/bin/zellij \
+    && zellij --version | grep -Fx "zellij ${ZELLIJ_VERSION}" \
     \
     && cp /usr/bin/docker /usr/local/bin/.undocked \
     \

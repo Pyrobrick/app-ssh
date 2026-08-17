@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_path="${TERMINAL_CONFIG_PATH:-/etc/terminal-session.conf}"
+# shellcheck disable=SC1090
+source "${config_path}"
+
+: "${INGRESS_ENTRY:?INGRESS_ENTRY is required}"
+: "${INGRESS_IP:?INGRESS_IP is required}"
+: "${INGRESS_PORT:?INGRESS_PORT is required}"
+: "${SUPERVISOR_IP:?SUPERVISOR_IP is required}"
+
+ingress_entry="${INGRESS_ENTRY%/}"
+zellij_config_file="${ZELLIJ_CONFIG_FILE_OVERRIDE:-${ZELLIJ_CONFIG_FILE:-/etc/zellij/config.kdl}"
+zellij_state_dir="${ZELLIJ_STATE_DIR:-/data/zellij}"
+zellij_token_file="${ZELLIJ_TOKEN_FILE:-${zellij_state_dir}/web-token}"
+nginx_config_file="${NGINX_CONFIG_FILE:-/etc/nginx/zellij.conf}"
+zellij_web_port="${ZELLIJ_WEB_PORT:-8082}"
+web_pid=
+nginx_pid=
+
+die() {
+    echo "zellij-web: $*" >&2
+    exit 1
+}
+
+valid_ipv4() {
+    local address=$1
+    local octet
+    local -a octets
+
+    [[ "${address}" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || return 1
+    IFS=. read -r -a octets <<< "${address}"
+    for octet in "${octets[@]}"; do
+        (( 10#${octet} <= 255 )) || return 1
+    done
+}
+
+valid_ipv4 "${INGRESS_IP}" || die "invalid ingress IP: ${INGRESS_IP}"
+valid_ipv4 "${SUPERVISOR_IP}" || die "invalid Supervisor IP: ${SUPERVISOR_IP}"
+[[ "${INGRESS_PORT}" =~ ^[0-9]+$ ]] \
+    && (( INGRESS_PORT > 0 && INGRESS_PORT <= 65535 )) \
+    || die "invalid ingress port: ${INGRESS_PORT}"
+[[ "${zellij_web_port}" =~ ^[0-9]+$ ]] \
+    && (( zellij_web_port > 0 && zellij_web_port <= 65535 )) \
+    || die "invalid Zellij web port: ${zellij_web_port}"
+[[ "${ingress_entry}" =~ ^/[A-Za-z0-9_/-]+$ ]] \
+    && [[ "${ingress_entry}" != '/' ]] \
+    || die "invalid ingress entry: ${INGRESS_ENTRY}"
+
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${zellij_state_dir}/cache}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-${zellij_state_dir}/data}"
+export ZELLIJ_CONFIG_FILE="${zellij_config_file}"
+
+mkdir -p \
+    "$(dirname "${zellij_config_file}")" \
+    "$(dirname "${nginx_config_file}")" \
+    "${XDG_CACHE_HOME}" \
+    "${XDG_DATA_HOME}" \
+    "${zellij_state_dir}"
+chmod 0700 "${zellij_state_dir}" "${XDG_CACHE_HOME}" "${XDG_DATA_HOME}"
+
+cat > "${zellij_config_file}.tmp" <<EOF
+default_shell "${TERMINAL_SHELL_COMMAND:-/usr/local/bin/terminal-shell}"
+mirror_session true
+simplified_ui true
+show_startup_tips false
+show_release_notes false
+web_sharing "on"
+
+web_client {
+    font "monospace"
+    base_url "${ingress_entry}"
+}
+EOF
+chmod 0600 "${zellij_config_file}.tmp"
+mv -f "${zellij_config_file}.tmp" "${zellij_config_file}"
+
+cat > "${nginx_config_file}.tmp" <<EOF
+worker_processes 1;
+pid /run/nginx-zellij.pid;
+error_log /dev/stderr warn;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    access_log off;
+    map \$http_upgrade \$connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    server {
+        listen ${INGRESS_IP}:${INGRESS_PORT};
+        server_name _;
+
+        allow ${SUPERVISOR_IP};
+        deny all;
+
+        location = / {
+            return 302 ${ingress_entry}/homeassistant;
+        }
+
+        location = ${ingress_entry} {
+            return 302 ${ingress_entry}/homeassistant;
+        }
+
+        location = ${ingress_entry}/ {
+            return 302 ${ingress_entry}/homeassistant;
+        }
+
+        location / {
+            rewrite ^${ingress_entry}(.*)\$ \$1 break;
+
+            proxy_pass http://127.0.0.1:${zellij_web_port};
+            proxy_http_version 1.1;
+            proxy_set_header Host \$http_host;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection \$connection_upgrade;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Ingress-Path "${ingress_entry}";
+            proxy_buffering off;
+            proxy_request_buffering off;
+            proxy_read_timeout 86400s;
+            proxy_send_timeout 86400s;
+
+            # Home Assistant renders ingress inside an iframe. Zellij's default
+            # DENY header would block that even though ingress is same-origin.
+            proxy_hide_header X-Frame-Options;
+
+            # Zellij emits Path=/; keep its generic session_token cookie scoped
+            # to this app's ingress route.
+            proxy_cookie_path / ${ingress_entry}/;
+        }
+    }
+}
+EOF
+chmod 0600 "${nginx_config_file}.tmp"
+mv -f "${nginx_config_file}.tmp" "${nginx_config_file}"
+
+if [[ "${1:-}" == '--render-only' ]]; then
+    exit 0
+fi
+
+nginx -t -q -c "${nginx_config_file}"
+
+token_listing=$(zellij --config "${zellij_config_file}" web --list-tokens)
+if [[ ! -s "${zellij_token_file}" ]] \
+    || ! grep -q '^home-assistant:' <<< "${token_listing}"; then
+    zellij --config "${zellij_config_file}" web \
+        --revoke-token home-assistant >/dev/null 2>&1 || true
+
+    token_output=$(zellij --config "${zellij_config_file}" web \
+        --create-token --token-name home-assistant)
+    token=$(awk -F': ' \
+        '$1 == "home-assistant" { print $2; exit }' <<< "${token_output}")
+    [[ "${token}" =~ ^[0-9a-fA-F-]{36}$ ]] \
+        || die 'Zellij returned an invalid authentication token'
+
+    umask 077
+    printf '%s\n' "${token}" > "${zellij_token_file}.tmp"
+    mv -f "${zellij_token_file}.tmp" "${zellij_token_file}"
+
+    echo "Zellij web authentication token: ${token}"
+fi
+chmod 0600 "${zellij_token_file}"
+echo "Zellij web token file: ${zellij_token_file}"
+
+cleanup() {
+    trap - EXIT TERM INT HUP
+    [[ -z "${nginx_pid}" ]] || kill "${nginx_pid}" 2>/dev/null || true
+    [[ -z "${web_pid}" ]] || kill "${web_pid}" 2>/dev/null || true
+    [[ -z "${nginx_pid}" ]] || wait "${nginx_pid}" 2>/dev/null || true
+    [[ -z "${web_pid}" ]] || wait "${web_pid}" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT HUP
+
+zellij --config "${zellij_config_file}" web \
+    --ip 127.0.0.1 --port "${zellij_web_port}" &
+web_pid=$!
+
+ready=false
+for _ in {1..100}; do
+    if curl -fsS "http://127.0.0.1:${zellij_web_port}/info/version" \
+        >/dev/null 2>&1; then
+        ready=true
+        break
+    fi
+    if ! kill -0 "${web_pid}" 2>/dev/null; then
+        wait "${web_pid}" || true
+        die 'Zellij web server exited during startup'
+    fi
+    sleep 0.1
+done
+[[ "${ready}" == true ]] || die 'Timed out waiting for the Zellij web server'
+
+nginx -c "${nginx_config_file}" -g 'daemon off;' &
+nginx_pid=$!
+
+set +e
+wait -n "${web_pid}" "${nginx_pid}"
+status=$?
+set -e
+exit "${status}"

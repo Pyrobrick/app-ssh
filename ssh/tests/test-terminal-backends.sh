@@ -5,6 +5,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 terminal_lib="${repo_root}/ssh/rootfs/usr/local/lib/terminal-config.sh"
 terminal_shell="${repo_root}/ssh/rootfs/usr/local/bin/terminal-shell"
 terminal_session="${repo_root}/ssh/rootfs/usr/local/bin/terminal-session"
+zellij_web="${repo_root}/ssh/rootfs/usr/local/bin/zellij-web"
 ssh_login="${repo_root}/ssh/rootfs/usr/local/bin/ssh-login"
 bash_profile="${repo_root}/ssh/rootfs/root/.bash_profile"
 declare -A config=()
@@ -76,7 +77,7 @@ mkdir -p "${tmp_dir}/bin"
 
 cat > "${tmp_dir}/bin/fake-shell" <<'EOF'
 #!/bin/sh
-printf '%s|%s|%s\n' "$1" "$SHELL" "$APP_SELECTED_SHELL"
+printf '%s|%s|%s\n' "$*" "$SHELL" "$APP_SELECTED_SHELL"
 EOF
 
 cat > "${tmp_dir}/bin/zellij" <<'EOF'
@@ -116,15 +117,23 @@ TERMINAL_SHELL_PATH=${tmp_dir}/bin/fake-shell
 TERMINAL_SESSION_BACKEND=zellij
 TERMINAL_SHARE_SESSIONS=true
 TERMINAL_SHELL_COMMAND=/custom/terminal-shell
+ZELLIJ_CONFIG_FILE=/custom/zellij.kdl
+ZELLIJ_STATE_DIR=${tmp_dir}/zellij
+XDG_CACHE_HOME=${tmp_dir}/zellij/cache
+XDG_DATA_HOME=${tmp_dir}/zellij/data
 EOF
 
 output=$(TERMINAL_CONFIG_PATH="${tmp_dir}/terminal.conf" "${terminal_shell}")
 assert_eq "-l|${tmp_dir}/bin/fake-shell|1" "${output}"
 
+output=$(TERMINAL_CONFIG_PATH="${tmp_dir}/terminal.conf" \
+    "${terminal_shell}" -c 'printf selected-shell')
+assert_eq "-c printf selected-shell|${tmp_dir}/bin/fake-shell|1" "${output}"
+
 output=$(PATH="${tmp_dir}/bin:${PATH}" \
     TERMINAL_CONFIG_PATH="${tmp_dir}/terminal.conf" "${terminal_session}")
 assert_eq \
-    'attach --create homeassistant options --default-shell /custom/terminal-shell --mirror-session true --simplified-ui true' \
+    '--config /custom/zellij.kdl attach --create homeassistant options --default-shell /custom/terminal-shell --mirror-session true --simplified-ui true --web-sharing on' \
     "${output}"
 
 sed -i 's/TERMINAL_SESSION_BACKEND=zellij/TERMINAL_SESSION_BACKEND=tmux/' \
@@ -156,6 +165,38 @@ assert_eq 'root:x:0:0:root:/root:/bin/bash' \
 assert_eq 'daemon:x:2:2:daemon:/sbin:/sbin/nologin' \
     "$(sed -n '2p' "${tmp_dir}/passwd")"
 
+# The native web configuration must be ingress-safe and keep ttyd out of the
+# Zellij path.
+INGRESS_ENTRY=/api/hassio_ingress/test-token \
+INGRESS_IP=172.30.33.10 \
+INGRESS_PORT=12345 \
+SUPERVISOR_IP=172.30.32.2 \
+TERMINAL_CONFIG_PATH="${tmp_dir}/terminal.conf" \
+ZELLIJ_CONFIG_FILE_OVERRIDE="${tmp_dir}/zellij.kdl" \
+NGINX_CONFIG_FILE="${tmp_dir}/nginx.conf" \
+"${zellij_web}" --render-only
+
+grep -Fq 'base_url "/api/hassio_ingress/test-token"' \
+    "${tmp_dir}/zellij.kdl" || fail 'missing Zellij ingress base URL'
+grep -Fq 'proxy_hide_header X-Frame-Options;' \
+    "${tmp_dir}/nginx.conf" || fail 'Zellij iframe header is not removed'
+grep -Fq 'proxy_cookie_path / /api/hassio_ingress/test-token/;' \
+    "${tmp_dir}/nginx.conf" || fail 'Zellij cookie is not ingress-scoped'
+grep -Fq 'listen 172.30.33.10:12345;' \
+    "${tmp_dir}/nginx.conf" || fail 'ingress listener is not isolated'
+grep -Fq 'allow 172.30.32.2;' \
+    "${tmp_dir}/nginx.conf" || fail 'Supervisor allow-list is missing'
+
+grep -Fq 'exec /usr/local/bin/zellij-web' \
+    "${repo_root}/ssh/rootfs/etc/s6-overlay/s6-rc.d/ttyd/run" \
+    || fail 'Zellij does not dispatch to its native web client'
+grep -Fq 'exec ttyd' \
+    "${repo_root}/ssh/rootfs/etc/s6-overlay/s6-rc.d/ttyd/run" \
+    || fail 'tmux no longer dispatches to ttyd'
+grep -Fq 'ARG ZELLIJ_VERSION="0.44.3"' \
+    "${repo_root}/ssh/Dockerfile" \
+    || fail 'web-capable Zellij version is not pinned'
+
 # A non-interactive login shell must not be redirected into a multiplexer.
 output=$(bash --noprofile --norc -c "source '${bash_profile}'; printf unaffected")
 assert_eq unaffected "${output}"
@@ -164,6 +205,7 @@ bash -n \
     "${terminal_lib}" \
     "${repo_root}/ssh/rootfs/etc/s6-overlay/s6-rc.d/init-user/run" \
     "${repo_root}/ssh/rootfs/etc/s6-overlay/s6-rc.d/ttyd/run" \
+    "${zellij_web}" \
     "${bash_profile}"
 sh -n "${terminal_shell}" "${terminal_session}" "${ssh_login}"
 

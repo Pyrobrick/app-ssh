@@ -14,6 +14,8 @@ readonly HOME_ASSISTANT_PROFILE_D_FILE=/etc/profile.d/homeassistant.sh
 readonly SSH_USER_PATH=/data/.ssh
 readonly TERMINAL_CONFIG_FILE=/etc/terminal-session.conf
 readonly TERMINAL_SHELL_COMMAND=/usr/local/bin/terminal-shell
+readonly ZELLIJ_CONFIG_FILE=/etc/zellij/config.kdl
+readonly ZELLIJ_STATE_DIR=/data/zellij
 readonly VSCODE_SERVER_PATH=/root/.vscode-server
 readonly VSCODE_SERVER_PERSISTENT_PATH=/data/.vscode-server
 readonly ZSH_HISTORY_FILE=/root/.zsh_history
@@ -33,10 +35,45 @@ TERMINAL_SHELL_PATH=${shell_path}
 TERMINAL_SESSION_BACKEND=${session_backend}
 TERMINAL_SHARE_SESSIONS=${share_sessions}
 TERMINAL_SHELL_COMMAND=${TERMINAL_SHELL_COMMAND}
+ZELLIJ_CONFIG_FILE=${ZELLIJ_CONFIG_FILE}
+ZELLIJ_STATE_DIR=${ZELLIJ_STATE_DIR}
+XDG_CACHE_HOME=${ZELLIJ_STATE_DIR}/cache
+XDG_DATA_HOME=${ZELLIJ_STATE_DIR}/data
 EOF
 
     chmod 0644 "${TERMINAL_CONFIG_FILE}" \
         || bashio::exit.nok 'Failed setting terminal configuration permissions'
+}
+
+write_zellij_config() {
+    mkdir -p \
+        "$(dirname "${ZELLIJ_CONFIG_FILE}")" \
+        "${ZELLIJ_STATE_DIR}/cache" \
+        "${ZELLIJ_STATE_DIR}/data" \
+        || bashio::exit.nok 'Failed creating Zellij directories'
+
+    chmod 0700 "${ZELLIJ_STATE_DIR}" \
+        "${ZELLIJ_STATE_DIR}/cache" \
+        "${ZELLIJ_STATE_DIR}/data" \
+        || bashio::exit.nok 'Failed setting Zellij directory permissions'
+
+    cat > "${ZELLIJ_CONFIG_FILE}.tmp" <<EOF
+default_shell "${TERMINAL_SHELL_COMMAND}"
+mirror_session true
+simplified_ui true
+show_startup_tips false
+show_release_notes false
+web_sharing "on"
+
+web_client {
+    font "monospace"
+}
+EOF
+
+    chmod 0600 "${ZELLIJ_CONFIG_FILE}.tmp" \
+        || bashio::exit.nok 'Failed setting Zellij configuration permissions'
+    mv -f "${ZELLIJ_CONFIG_FILE}.tmp" "${ZELLIJ_CONFIG_FILE}" \
+        || bashio::exit.nok 'Failed installing Zellij configuration'
 }
 
 # Links some common directories to the user's home folder for convenience
@@ -101,6 +138,7 @@ esac
 # Keep root on Bash for OpenSSH command-mode compatibility.
 terminal::set_root_account_shell /etc/passwd*
 write_terminal_config
+write_zellij_config
 
 # Make new tmux panes use the same login-shell wrapper as the initial pane.
 sed -i -r -e \
