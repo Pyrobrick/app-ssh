@@ -79,6 +79,8 @@ schema:
     allow_agent_forwarding: bool
     allow_remote_port_forwarding: bool
     allow_tcp_forwarding: bool
+  shell: list(fish|zsh|bash)?
+  session_backend: list(zellij|tmux)?
   zsh: bool
   share_sessions: bool
   packages:

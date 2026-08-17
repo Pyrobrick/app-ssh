@@ -8,6 +8,7 @@ readonly SSH_AUTHORIZED_KEYS_PATH=/etc/ssh/authorized_keys
 readonly SSH_CONFIG_PATH=/etc/ssh/sshd_config
 readonly SSH_HOST_ED25519_KEY=/data/ssh_host_ed25519_key
 readonly SSH_HOST_RSA_KEY=/data/ssh_host_rsa_key
+readonly SSH_LOGIN_SHELL=/usr/local/bin/ssh-login
 declare password
 declare port
 declare username
@@ -98,17 +99,14 @@ username=$(bashio::string.lower "${username}")
 # Create user account if the user isn't root
 if [[ "${username}" != "root" ]]; then
 
-    # Create an user account
-    adduser -D "${username}" -s "/bin/zsh" \
+    # The wrapper elevates both interactive sessions and remote commands while
+    # keeping non-interactive commands on root's POSIX-compatible Bash shell.
+    adduser -D "${username}" -s "${SSH_LOGIN_SHELL}" \
         || bashio::exit.nok 'Failed creating the user account'
 
     # Add new user to the wheel group
     adduser "${username}" wheel \
         || bashio::exit.nok 'Failed adding user to wheel group'
-
-    # Ensure new user switches to root after login
-    echo 'exec sudo -i' > "/home/${username}/.zprofile" \
-        || bashio::exit.nok 'Failed configuring user profile'
 fi
 
 # We need to set a password for the user account

@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+config_path="${TERMINAL_CONFIG_PATH:-/etc/terminal-session.conf}"
+# shellcheck disable=SC1090
+. "${config_path}"
+
+export APP_SELECTED_SHELL=1
+export SHELL="${TERMINAL_SHELL_PATH}"
+
+if [ "$#" -gt 0 ]; then
+    exec "${TERMINAL_SHELL_PATH}" "$@"
+fi
+
+exec "${TERMINAL_SHELL_PATH}" -l

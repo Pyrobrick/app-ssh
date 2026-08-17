@@ -44,12 +44,13 @@ well. Additionally, it comes out of the box with the following:
   your favorite tools, which will be available every single time you log in.
 - Execute custom commands on app start so that you can customize the
   shell to your likings.
-- [ZSH][zsh] as its default shell. Easier to use for the beginner, more advanced
-  for the more experienced user. It even comes preloaded with
-  ["Oh My ZSH"][ohmyzsh], with some plugins enabled as well.
+- Selectable interactive shells: Zsh with Oh My Zsh remains the compatible
+  default, while Fish and Bash are available through the `shell` option.
+- Selectable terminal session backends: tmux remains the compatible default
+  and uses ttyd/xterm.js, while Zellij uses its native browser client.
 - Contains a sensible set of tools right out of the box: curl, Wget, RSync, GIT,
   Nmap, Mosquitto client, MariaDB/MySQL client, Awake ("wake on LAN"), Nano,
-  Neovim, tmux, and a bunch commonly used networking tools.
+  Neovim, tmux, Zellij, and a bunch commonly used networking tools.
 
 ## Installation
 
@@ -85,7 +86,8 @@ ssh:
   allow_agent_forwarding: false
   allow_remote_port_forwarding: false
   allow_tcp_forwarding: false
-zsh: true
+shell: fish
+session_backend: zellij
 share_sessions: true
 packages:
   - build-base
@@ -197,19 +199,46 @@ Nevertheless, this warning is debatable._
 
 The following options are shared between both the SSH and the Web Terminal.
 
+#### Option: `shell`
+
+Selects the interactive shell used by SSH and the Web Terminal. Supported values
+are `fish`, `zsh`, and `bash`. If this option is omitted, the legacy `zsh`
+option remains authoritative so existing installations keep their current shell.
+
+The root account itself deliberately keeps Bash as its account shell. The
+selected interactive shell is started only after login, which keeps remote SSH
+commands and tools such as rsync on a POSIX-compatible command shell.
+
+#### Option: `session_backend`
+
+Selects the terminal multiplexer used by the Web Terminal and, when session
+sharing is enabled, SSH. Supported values are `zellij` and `tmux`. If this
+option is omitted, tmux remains the default for compatibility with existing
+installations.
+
+With `zellij`, the Home Assistant panel is served by Zellij's built-in web
+server; ttyd and xterm.js are not started. A small ingress adapter restricts the
+server to Home Assistant Supervisor traffic and forwards its HTTP and WebSocket
+connections. With `tmux`, the existing ttyd/xterm.js Web Terminal remains in
+use for Fish, Zsh, and Bash.
+
+Zellij's token authentication stays enabled. On first startup the app creates a
+token named `home-assistant`, prints it once in the app log, and stores the
+token in `/data/zellij/web-token` with root-only permissions. Paste it into
+the Zellij login screen and select the remember option if desired.
+
 #### Option: `zsh`
 
-The app has ZSH pre-installed and configured as the default shell.
-However, ZSH might not be your preferred choice. By setting this option to
-`false`, you will disable ZSH and the app will fallback to Bash instead.
+This is the legacy shell selector. It remains supported for upgrades: `true`
+selects Zsh and `false` selects Bash when `shell` is absent. New
+configurations should use `shell` instead.
 
 #### Option: `share_sessions`
 
-By default, the terminal session between the web client and SSH is shared.
-This allows you to pick up where you left your terminal from either of those.
-
-This option allows you to disable this behavior by setting it to `false`, which
-effectively sets SSH to behave as it used to be.
+When enabled, interactive SSH clients attach to the same multiplexer session as
+the Web Terminal. When disabled, SSH starts the selected shell without attaching
+to the Web Terminal session. Non-interactive SSH commands never enter a
+multiplexer.
 
 #### Option: `packages`
 
@@ -243,8 +272,8 @@ single time this app starts.
 
 ## Clipboard: copying and pasting
 
-The Web Terminal is based on xterm.js, which follows X11-style clipboard
-conventions that may differ from what you expect:
+With the `tmux` backend, the Web Terminal uses xterm.js and follows X11-style
+clipboard conventions that may differ from what you expect:
 
 - **Copy**: hold `Shift` and select the text with your mouse. The selection is
   copied to your system clipboard right away (a small scissors icon briefly
@@ -252,39 +281,32 @@ conventions that may differ from what you expect:
 - **Paste**: press `Ctrl+Shift+V`, or right-click and choose paste, depending
   on your browser.
 
-This applies to the Web Terminal in the Home Assistant frontend. A regular SSH
-client uses the clipboard behavior of its own terminal instead.
+The `zellij` backend instead uses Zellij's native browser client and its own
+keyboard and mouse handling. A regular SSH client always uses the clipboard
+behavior of its own terminal.
 
 ## Known issues and limitations
 
 - When SFTP is enabled, the username MUST be set to `root`.
-- If you want to use rsync for file transfer, the username MUST be set to
-  `root`.
 
 ## Running the `ha` command or Supervisor API non-interactively
 
-When you log in interactively, the app starts a login shell that sets up the
-`SUPERVISOR_TOKEN` environment variable. The `ha` command and the Supervisor
-API need that token, so commands like `ha core info` just work.
-
-Running a command non-interactively does **not** start a login shell, so the
-token is not set and the command fails with a `401` error. For example, this
-fails:
+Non-interactive SSH commands always run under Bash and never enter the selected
+multiplexer. With the default non-root SSH username, the login wrapper executes
+the command through root's Bash login environment. When logging in directly as
+root, OpenSSH invokes root's Bash account shell and imports the
+`SUPERVISOR_TOKEN` from the permitted SSH environment:
 
 ```shell
 ssh your-instance "ha core info"
 ```
 
-Wrap the command in a login shell so the environment, and with it the token,
-is loaded:
+The command's output and exit status are returned directly to the SSH client.
+Interactive SSH and Web Terminal logins still use the configured `shell` and,
+when enabled, the configured shared-session backend.
 
-```shell
-ssh your-instance 'bash -lc "ha core info"'
-```
-
-The same applies when calling the Supervisor API directly or running commands
-from automations: invoke them through a login shell (`bash -lc '...'`) so the
-`SUPERVISOR_TOKEN` is available.
+Mosh bootstraps through non-interactive SSH command mode. It therefore starts
+Bash and does not attach to the configured shared-session backend.
 
 ## Changelog & Releases
 
